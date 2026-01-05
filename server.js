@@ -2,18 +2,76 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const color = require('ansi-colors');
-const argv = require('yargs/yargs')(process.argv.slice(2)).argv;
 
-const DEFAULT_MOCK_DATA_SUBDIR = '/mock_data';
+const DEFAULT_MOCK_DATA_SUBDIR = 'mock_data';
 const DEFAULT_PORT = 8085;
+
+const COLORS = {
+    reset: '\x1b[0m',
+    bright: '\x1b[1m',
+    red: '\x1b[31m',
+    green: '\x1b[32m',
+    yellow: '\x1b[33m',
+    cyan: '\x1b[36m',
+    magenta: '\x1b[35m',
+    white: '\x1b[37m'
+};
+
+const options = parseArgs(process.argv.slice(2));
+
+function parseArgs(args) {
+    const parsed = {
+        path: DEFAULT_MOCK_DATA_SUBDIR,
+        port: DEFAULT_PORT,
+        public: false
+    };
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (arg === '--public') {
+            parsed.public = true;
+            continue;
+        }
+
+        if (arg.startsWith('--path=')) {
+            parsed.path = arg.slice('--path='.length);
+            continue;
+        }
+
+        if (arg === '--path' && i + 1 < args.length) {
+            parsed.path = args[++i];
+            continue;
+        }
+
+        if (arg.startsWith('--port=')) {
+            const value = Number(arg.slice('--port='.length));
+            parsed.port = Number.isFinite(value) ? value : parsed.port;
+            continue;
+        }
+
+        if (arg === '--port' && i + 1 < args.length) {
+            const value = Number(args[++i]);
+            parsed.port = Number.isFinite(value) ? value : parsed.port;
+        }
+    }
+
+    return parsed;
+}
+
+function colorize(text, ...codes) {
+    if (codes.length === 0) {
+        return text;
+    }
+    return `${codes.join('')}${text}${COLORS.reset}`;
+}
 
 let mockDataPath = '';
 
 function init() {
-    mockDataPath = path.join(__dirname, argv.path ? argv.path : DEFAULT_MOCK_DATA_SUBDIR);
+    mockDataPath = path.resolve(__dirname, options.path ? options.path : DEFAULT_MOCK_DATA_SUBDIR);
     if (!fs.existsSync(mockDataPath)) {
-        console.error(color.redBright(`No such directory: ${mockDataPath}`));
+        console.error(colorize(`No such directory: ${mockDataPath}`, COLORS.red, COLORS.bright));
         process.exit(1);
     }
 }
@@ -26,9 +84,21 @@ function timestamp() {
 
 function logRequest(method, url, data, result, dynamic) {
     if (true === result) {
-        console.log(color.whiteBright(`[${timestamp()}]: ${color.yellow(`[${dynamic ? 'dynamic' : ' static'} request] `)}${color.greenBright.bold(`${method.padStart(4, ' ')}`)} ${color.green(`${url} ${color.whiteBright('->')} ${path.join(mockDataPath, data)}.${dynamic ? 'js' : 'json'}`)} (ok)`));
+        const kind = dynamic ? 'dynamic' : ' static';
+        console.log(
+            colorize(
+                `[${timestamp()}]: [${kind} request] ${colorize(method.padStart(4, ' '), COLORS.green, COLORS.bright)} ${url} -> ${path.join(mockDataPath, data)}.${dynamic ? 'js' : 'json'} (ok)`,
+                COLORS.yellow
+            )
+        );
     } else {
-        console.log(color.whiteBright(`[${timestamp()}]: ${color.redBright.bold(`${method.padStart(4, ' ')}`)} ${color.red(url)} (Not found: ${mockDataPath}${data}.js(json)`));
+        console.log(
+            colorize(
+                `[${timestamp()}]: ${method.padStart(4, ' ')} ${url} (Not found: ${path.join(mockDataPath, data)}.js(json)`,
+                COLORS.red,
+                COLORS.bright
+            )
+        );
     }
 }
 
@@ -39,7 +109,6 @@ const server = http.createServer(null, (req, res) => {
     res.statusCode = 200;
 
     if (req.method === 'OPTIONS') {
-        res.statusCode = 200;
         res.end();
         return;
     }
@@ -92,16 +161,13 @@ const server = http.createServer(null, (req, res) => {
 init();
 
 server.listen({
-   host: '127.0.0.1',
-   port: argv.port || DEFAULT_PORT
+   host: options.public ? '0.0.0.0' : '127.0.0.1',
+   port: options.port || DEFAULT_PORT
 }, () => {
-    console.log(color.whiteBright(
-        'Started ' + 
-        (argv.public ? color.redBright('public') : color.cyanBright('local')) + 
-        ' mock server\nListening on port ' + 
-        color.magentaBright(argv.port || DEFAULT_PORT)) +
-        '\n' +
-        'Serving from ' +
-        mockDataPath
-        );
+    const mode = options.public ? 'public' : 'local';
+    console.log([
+        colorize(`Started ${mode} mock server`, COLORS.white, COLORS.bright),
+        colorize(`Listening on port ${options.port || DEFAULT_PORT}`, COLORS.magenta),
+        colorize(`Serving from ${mockDataPath}`, COLORS.cyan)
+    ].join('\n'));
 });
